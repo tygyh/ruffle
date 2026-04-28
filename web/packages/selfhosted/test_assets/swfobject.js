@@ -10,7 +10,6 @@ var swfobject = function() {
         SHOCKWAVE_FLASH_AX = "ShockwaveFlash.ShockwaveFlash",
         FLASH_MIME_TYPE = "application/x-shockwave-flash",
         EXPRESS_INSTALL_ID = "SWFObjectExprInst",
-        ON_READY_STATE_CHANGE = "onreadystatechange",
 
         win = window,
         doc = document,
@@ -20,7 +19,6 @@ var swfobject = function() {
         domLoadFnArr = [],
         regObjArr = [],
         objIdArr = [],
-        listenersArr = [],
         storedFbContent,
         storedFbContentId,
         storedCallbackFn,
@@ -73,73 +71,7 @@ var swfobject = function() {
             catch(e) {}
         }
         return { w3:w3cdom, pv:playerVersion, wk:webkit, ie:ie, win:windows, mac:mac };
-    }(),
-
-    /* Cross-browser onDomLoad
-        - Will fire an event as soon as the DOM of a web page is loaded
-        - Internet Explorer workaround based on Diego Perini's solution: http://javascript.nwbox.com/IEContentLoaded/
-        - Regular onload serves as fallback
-    */
-    onDomLoad = function() {
-        if (!ua.w3) { return; }
-        if ((typeof doc.readyState != UNDEF && (doc.readyState === "complete" || doc.readyState === "interactive")) || (typeof doc.readyState == UNDEF && (doc.getElementsByTagName("body")[0] || doc.body))) { // function is fired after onload, e.g. when script is inserted dynamically
-            callDomLoadFunctions();
-        }
-        if (!isDomLoaded) {
-            if (typeof doc.addEventListener != UNDEF) {
-                doc.addEventListener("DOMContentLoaded", callDomLoadFunctions, false);
-            }
-            if (ua.ie) {
-                doc.attachEvent(ON_READY_STATE_CHANGE, function detach() {
-                    if (doc.readyState == "complete") {
-                        doc.detachEvent(ON_READY_STATE_CHANGE, detach);
-                        callDomLoadFunctions();
-                    }
-                });
-                if (win == top) { // if not inside an iframe
-                    (function checkDomLoadedIE(){
-                        if (isDomLoaded) { return; }
-                        try {
-                            doc.documentElement.doScroll("left");
-                        }
-                        catch(e) {
-                            setTimeout(checkDomLoadedIE, 0);
-                            return;
-                        }
-                        callDomLoadFunctions();
-                    }());
-                }
-            }
-            if (ua.wk) {
-                (function checkDomLoadedWK(){
-                    if (isDomLoaded) { return; }
-                    if (!/loaded|complete/.test(doc.readyState)) {
-                        setTimeout(checkDomLoadedWK, 0);
-                        return;
-                    }
-                    callDomLoadFunctions();
-                }());
-            }
-        }
     }();
-
-    function callDomLoadFunctions() {
-        if (isDomLoaded || !document.getElementsByTagName("body")[0]) { return; }
-        try { // test if we can really add/remove elements to/from the DOM; we don't want to fire it too early
-            var t, span = createElement("span");
-            span.style.display = "none"; //hide the span in case someone has styled spans via CSS
-            t = doc.getElementsByTagName("body")[0].appendChild(span);
-            t.parentNode.removeChild(t);
-            t = null; //clear the variables
-            span = null;
-        }
-        catch (e) { return; }
-        isDomLoaded = true;
-        var dl = domLoadFnArr.length;
-        for (var i = 0; i < dl; i++) {
-            domLoadFnArr[i]();
-        }
-    }
 
     function addDomLoadEvent(fn) {
         if (isDomLoaded) {
@@ -147,32 +79,6 @@ var swfobject = function() {
         }
         else {
             domLoadFnArr[domLoadFnArr.length] = fn; // Array.push() is only available in IE5.5+
-        }
-    }
-
-    /* Cross-browser onload
-        - Based on James Edwards' solution: http://brothercake.com/site/resources/scripts/onload/
-        - Will fire an event as soon as a web page including all of its assets are loaded
-     */
-    function addLoadEvent(fn) {
-        if (typeof win.addEventListener != UNDEF) {
-            win.addEventListener("load", fn, false);
-        }
-        else if (typeof doc.addEventListener != UNDEF) {
-            doc.addEventListener("load", fn, false);
-        }
-        else if (typeof win.attachEvent != UNDEF) {
-            addListener(win, "onload", fn);
-        }
-        else if (typeof win.onload == "function") {
-            var fnOld = win.onload;
-            win.onload = function() {
-                fnOld();
-                fn();
-            };
-        }
-        else {
-            win.onload = fn;
         }
     }
 
@@ -562,14 +468,6 @@ var swfobject = function() {
         return parseInt(str, 10);
     }
 
-    /* Updated attachEvent function for Internet Explorer
-        - Stores attachEvent information in an Array, so on unload the detachEvent functions can be called to avoid memory leaks
-    */
-    function addListener(target, eventType, fn) {
-        target.attachEvent(eventType, fn);
-        listenersArr[listenersArr.length] = [target, eventType, fn];
-    }
-
     /* Flash Player and SWF content version matching
     */
     function hasPlayerVersion(rv) {
@@ -624,67 +522,7 @@ var swfobject = function() {
         }
     }
 
-    /* Filter to avoid XSS attacks
-    */
-    function urlEncodeIfNecessary(s) {
-        var regex = /[\\\"<>\.;]/;
-        var hasBadChars = regex.exec(s) != null;
-        return hasBadChars && typeof encodeURIComponent != UNDEF ? encodeURIComponent(s) : s;
-    }
-
-    /* Release memory to avoid memory leaks caused by closures, fix hanging audio/video threads and force open sockets/NetConnections to disconnect (Internet Explorer only)
-    */
-    var cleanup = function() {
-        if (ua.ie) {
-            window.attachEvent("onunload", function() {
-                // remove listeners to avoid memory leaks
-                var ll = listenersArr.length;
-                for (var i = 0; i < ll; i++) {
-                    listenersArr[i][0].detachEvent(listenersArr[i][1], listenersArr[i][2]);
-                }
-                // cleanup dynamically embedded objects to fix audio/video threads and force open sockets and NetConnections to disconnect
-                var il = objIdArr.length;
-                for (var j = 0; j < il; j++) {
-                    removeSWF(objIdArr[j]);
-                }
-                // cleanup library's main closures to avoid memory leaks
-                for (var k in ua) {
-                    ua[k] = null;
-                }
-                ua = null;
-                for (var l in swfobject) {
-                    swfobject[l] = null;
-                }
-                swfobject = null;
-            });
-        }
-    }();
-
     return {
-        /* Public API
-            - Reference: http://code.google.com/p/swfobject/wiki/documentation
-        */
-        registerObject: function(objectIdStr, swfVersionStr, xiSwfUrlStr, callbackFn) {
-            if (ua.w3 && objectIdStr && swfVersionStr) {
-                var regObj = {};
-                regObj.id = objectIdStr;
-                regObj.swfVersion = swfVersionStr;
-                regObj.expressInstall = xiSwfUrlStr;
-                regObj.callbackFn = callbackFn;
-                regObjArr[regObjArr.length] = regObj;
-                setVisibility(objectIdStr, false);
-            }
-            else if (callbackFn) {
-                callbackFn({success:false, id:objectIdStr});
-            }
-        },
-
-        getObjectById: function(objectIdStr) {
-            if (ua.w3) {
-                return getObjectById(objectIdStr);
-            }
-        },
-
         embedSWF: function(swfUrlStr, replaceElemIdStr, widthStr, heightStr, swfVersionStr, xiSwfUrlStr, flashvarsObj, parObj, attObj, callbackFn) {
 
             var id = getId(replaceElemIdStr),
@@ -750,85 +588,9 @@ var swfobject = function() {
             else if (callbackFn) { callbackFn(callbackObj);    }
         },
 
-        switchOffAutoHideShow: function() {
-            autoHideShow = false;
-        },
-
-        enableUriEncoding: function (bool) {
-            encodeURI_enabled = (typeof bool === UNDEF) ? true : bool;
-        },
-
         ua: ua,
 
-        getFlashPlayerVersion: function() {
-            return { major:ua.pv[0], minor:ua.pv[1], release:ua.pv[2] };
-        },
-
         hasFlashPlayerVersion: hasPlayerVersion,
-
-        createSWF: function(attObj, parObj, replaceElemIdStr) {
-            if (ua.w3) {
-                return createSWF(attObj, parObj, replaceElemIdStr);
-            }
-            else {
-                return undefined;
-            }
-        },
-
-        showExpressInstall: function(att, par, replaceElemIdStr, callbackFn) {
-            if (ua.w3 && canExpressInstall()) {
-                showExpressInstall(att, par, replaceElemIdStr, callbackFn);
-            }
-        },
-
-        removeSWF: function(objElemIdStr) {
-            if (ua.w3) {
-                removeSWF(objElemIdStr);
-            }
-        },
-
-        createCSS: function(selStr, declStr, mediaStr, newStyleBoolean) {
-            if (ua.w3) {
-                createCSS(selStr, declStr, mediaStr, newStyleBoolean);
-            }
-        },
-
-        addDomLoadEvent: addDomLoadEvent,
-
-        addLoadEvent: addLoadEvent,
-
-        getQueryParamValue: function(param) {
-            var q = doc.location.search || doc.location.hash;
-            if (q) {
-                if (/\?/.test(q)) { q = q.split("?")[1]; } // strip question mark
-                if (param == null) {
-                    return urlEncodeIfNecessary(q);
-                }
-                var pairs = q.split("&");
-                for (var i = 0; i < pairs.length; i++) {
-                    if (pairs[i].substring(0, pairs[i].indexOf("=")) == param) {
-                        return urlEncodeIfNecessary(pairs[i].substring((pairs[i].indexOf("=") + 1)));
-                    }
-                }
-            }
-            return "";
-        },
-
-        // For internal usage only
-        expressInstallCallback: function() {
-            if (isExpressInstallActive) {
-                var obj = getElementById(EXPRESS_INSTALL_ID);
-                if (obj && storedFbContent) {
-                    obj.parentNode.replaceChild(storedFbContent, obj);
-                    if (storedFbContentId) {
-                        setVisibility(storedFbContentId, true);
-                        if (ua.ie) { storedFbContent.style.display = "block"; }
-                    }
-                    if (storedCallbackFn) { storedCallbackFn(storedCallbackObj); }
-                }
-                isExpressInstallActive = false;
-            }
-        },
 
 		version: "2.3"
 
